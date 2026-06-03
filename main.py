@@ -5,20 +5,13 @@ import redis
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
+from report_generator import generate_report_file
 
-app = FastAPI(
-    title="Copilot Reporting API",
-    description="Microservice for generating and updating dynamic financial reports.",
-    version="1.0.0"
-)
+app = FastAPI(title="Copilot Reporting API", version="1.0.0")
 
-# --- Connect to Redis ---
-# Locally, this connects to localhost:6379. 
-# In production, you will change this environment variable to your Azure Redis connection string.
 REDIS_URL = os.environ.get("REDIS_CONNECTION_STRING", "redis://localhost:6379/0")
 redis_client = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
 
-# --- Pydantic Models ---
 class DraftRequest(BaseModel):
     conversation_id: str
     target_month: str
@@ -30,29 +23,30 @@ class UpdateRequest(BaseModel):
     target_kpi: str
     action_visual: str
 
-# --- Endpoints ---
 @app.post("/generate-draft", tags=["Reporting Workflow"])
 async def generate_draft(req: DraftRequest):
     try:
-        # 1. Mocked Power BI Data
+        # 1. Simulating data retrieved from Power BI DAX
         mock_dataframe = {
-            "aum": 5000000, 
-            "disbursements": 1200000,
+            "aum": 7500000, 
+            "disbursements": 2300000,
             "month": req.target_month,
             "year": req.target_year
         }
         
-        # 2. Store state in REAL Redis with a 1-hour TTL (3600 seconds)
+        # 2. Store dataset state in Redis
         cache_key = f"draft_report_{req.conversation_id}"
         redis_client.setex(cache_key, 3600, json.dumps(mock_dataframe))
         
-        ai_summary = f"Executive Summary: The {req.report_type} for {req.target_month} {req.target_year} shows strong performance."
-        draft_url = f"https://mock-storage.azure.com/draft_{req.conversation_id}.pptx"
+        # 3. Generate actual PPTX file
+        absolute_file_path = generate_report_file(mock_dataframe, target_kpi="aum")
+        
+        ai_summary = f"Generated {req.report_type} for {req.target_month} {req.target_year}. Core focus is currently set to AUM."
 
         return {
             "status": "success",
             "aisummary": ai_summary,
-            "reporturl": draft_url
+            "reporturl": absolute_file_path  # Now returns the actual local path
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -62,24 +56,20 @@ async def generate_draft(req: DraftRequest):
 async def update_visual(req: UpdateRequest):
     cache_key = f"draft_report_{req.conversation_id}"
     
-    # 1. Pull state back from real Redis
+    # 1. Pull data back from Redis
     cached_data_str = redis_client.get(cache_key)
     if not cached_data_str:
-        raise HTTPException(
-            status_code=404, 
-            detail="Session expired or not found. Please request a new report."
-        )
+        raise HTTPException(status_code=404, detail="Session expired or not found.")
     
-    # 2. Parse the JSON back into a Python dictionary
     cached_data = json.loads(cached_data_str)
     
-    # 3. Simulate surgical update
-    updated_url = f"https://mock-storage.azure.com/updated_{req.target_kpi}_{uuid.uuid4().hex[:6]}.pptx"
+    # 2. Re-trigger PPTX generation using swapped target KPI configuration
+    absolute_file_path = generate_report_file(cached_data, target_kpi=req.target_kpi)
     
     return {
         "status": "success",
-        "message": f"Successfully updated the {req.target_kpi} visual to a {req.action_visual} utilizing cached data from {cached_data['month']}.",
-        "reporturl": updated_url
+        "message": f"Successfully switched target visual slice emphasis to focus on {req.target_kpi}.",
+        "reporturl": absolute_file_path
     }
 
 if __name__ == "__main__":
