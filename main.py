@@ -1,76 +1,184 @@
 import os
 import json
-import uuid
-import redis
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
-from report_generator import generate_report_file
+from dotenv import load_dotenv
 
-app = FastAPI(title="Copilot Reporting API", version="1.0.0")
+load_dotenv() 
 
-REDIS_URL = os.environ.get("REDIS_CONNECTION_STRING", "redis://localhost:6379/0")
-redis_client = redis.StrictRedis.from_url(REDIS_URL, decode_responses=True)
+from groq import Groq 
+from report_generator import create_pdf_report_from_dict 
 
-class DraftRequest(BaseModel):
-    conversation_id: str
-    target_month: str
-    target_year: str
-    report_type: str = "Loan Tape"
+app = FastAPI(title="Stateless AI Reporting API")
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-class UpdateRequest(BaseModel):
-    conversation_id: str
-    target_kpi: str
-    action_visual: str
+# --- The "Report Itself" (Power BI Semantic Model) ---
+# This is the hardcoded schema the LLM actually needs to write valid DAX.
+# When you connect to the real database later, you can fetch this dynamically from Power BI's Data Dictionary.
+POWER_BI_SCHEMA = """
+Table: 'Financials'
+Columns:
+- Date (Datetime)
+- Product_Type (String: 'Gold Loan', 'MSME', 'Retail', 'Vehicle Loan')
+- Customer_Name (String)
+- State (String)
 
-@app.post("/generate-draft", tags=["Reporting Workflow"])
-async def generate_draft(req: DraftRequest):
+Measures:
+- [Total_AUM] (Currency)
+- [Total_Disbursement] (Currency)
+- [Total_Collection] (Currency)
+- [PAR_90_Percent] (Percentage)
+- [Active_Loans] (Integer)
+"""
+
+class ReportRequest(BaseModel):
+    user_prompt: str
+    selected_date: str = "FY 2025"
+    template_type: str = "investor_report"
+
+class UpdateVisualRequest(BaseModel):
+    user_prompt: str
+    selected_date: str = "FY 2025"
+    template_type: str = "investor_report"
+    target_chart_id: str  
+
+# --- AI Helper Functions ---
+
+def generate_dax_query(prompt: str, target_date: str) -> str:
+    """Uses LLM to generate the DAX query grounded strictly in the Power BI Semantic Model."""
+    system_prompt = f"""
+    You are a Power BI DAX expert. The user wants a report for {target_date}. 
+    
+    Here is the exact schema of our Power BI dataset:
+    {POWER_BI_SCHEMA}
+    
+    CRITICAL: Generate ONLY a valid DAX query (e.g., EVALUATE SUMMARIZECOLUMNS...) using exactly these table and measure names. 
+    Do not hallucinate column names. No markdown, no explanations.
+    """
+    
+    response = client.chat.completions.create(
+        model="openai/gpt-oss-120b",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.1
+    )
+    return response.choices[0].message.content.strip()
+
+def generate_visual_config(prompt: str) -> dict:
+    """Uses LLM to generate the secure JSON configuration for matplotlib."""
+    system_prompt = """
+    You are a data visualization expert. The user wants to update a chart.
+    Output ONLY a raw JSON object matching this schema. Do not use markdown blocks (```json).
+    Schema:
+    {
+      "chart_type": "string (bar, line, pie, combo, scatter)",
+      "title": "string",
+      "x_axis": "string",
+      "y_axis": "string",
+      "colors": ["#HexCode"]
+    }
+    """
+    
+    response = client.chat.completions.create(
+        model="llama3-70b-8192",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.1,
+        response_format={"type": "json_object"}
+    )
+    
     try:
-        # 1. Simulating data retrieved from Power BI DAX
-        mock_dataframe = {
-            "aum": 7500000, 
-            "disbursements": 2300000,
-            "month": req.target_month,
-            "year": req.target_year
-        }
-        
-        # 2. Store dataset state in Redis
-        cache_key = f"draft_report_{req.conversation_id}"
-        redis_client.setex(cache_key, 3600, json.dumps(mock_dataframe))
-        
-        # 3. Generate actual PPTX file
-        absolute_file_path = generate_report_file(mock_dataframe, target_kpi="aum")
-        
-        ai_summary = f"Generated {req.report_type} for {req.target_month} {req.target_year}. Core focus is currently set to AUM."
+        return json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError:
+        raise ValueError("LLM failed to return valid JSON.")
 
+# --- API Endpoints ---
+
+@app.post("/generate-report", tags=["Reporting Workflow"])
+async def generate_report(req: ReportRequest):
+    try:
+        # 1. AI Generates DAX using the backend Power BI Schema
+        dax_query = generate_dax_query(req.user_prompt, req.selected_date)
+        print(f"Executing DAX: \n{dax_query}") 
+        
+        # 2. Load the base JSON Template for the frontend
+        template_path = os.path.join("templates", f"{req.template_type}.json")
+        with open(template_path, 'r') as f:
+            template_data = json.load(f)
+            
+        # 3. Render the PDF
+        pdf_file_path = create_pdf_report_from_dict(
+            template_data=template_data, 
+            target_date=req.selected_date
+        )
+        
         return {
             "status": "success",
-            "aisummary": ai_summary,
-            "reporturl": absolute_file_path  # Now returns the actual local path
+            "dax_used": dax_query,
+            "local_pdf_path": pdf_file_path
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/update-visual", tags=["Reporting Workflow"])
-async def update_visual(req: UpdateRequest):
-    cache_key = f"draft_report_{req.conversation_id}"
-    
-    # 1. Pull data back from Redis
-    cached_data_str = redis_client.get(cache_key)
-    if not cached_data_str:
-        raise HTTPException(status_code=404, detail="Session expired or not found.")
-    
-    cached_data = json.loads(cached_data_str)
-    
-    # 2. Re-trigger PPTX generation using swapped target KPI configuration
-    absolute_file_path = generate_report_file(cached_data, target_kpi=req.target_kpi)
-    
-    return {
-        "status": "success",
-        "message": f"Successfully switched target visual slice emphasis to focus on {req.target_kpi}.",
-        "reporturl": absolute_file_path
-    }
+async def update_visual(req: UpdateVisualRequest):
+    try:
+        # 1. AI Generates the new visual configuration
+        new_chart_config = generate_visual_config(req.user_prompt)
+        print(f"New Chart Config: {new_chart_config}")
+        
+        # 2. Load the base JSON template
+        template_path = os.path.join("templates", f"{req.template_type}.json")
+        with open(template_path, 'r') as f:
+            template_data = json.load(f)
+            
+        # 3. Traverse the template and PATCH the target chart
+        chart_found = False
+        sections = template_data.get("pages", template_data.get("slides", []))
+        for section in sections:
+            for viz in section.get("visualizations", []):
+                if viz.get("chart_id") == req.target_chart_id:
+                    viz["chart_type"] = new_chart_config.get("chart_type", viz["chart_type"])
+                    viz["title"] = new_chart_config.get("title", viz["title"])
+                    if "x_axis" in new_chart_config: viz["x_axis"] = new_chart_config["x_axis"]
+                    if "y_axis" in new_chart_config: viz["y_axis"] = new_chart_config["y_axis"]
+                    
+                    viz["config"] = new_chart_config 
+                    chart_found = True
+                    break
+            if chart_found: break
+                
+        if not chart_found:
+            raise HTTPException(status_code=404, detail="Target chart ID not found.")
+
+        # 4. Generate DAX (Based on the prompt and the Power BI Schema)
+        dax_query = generate_dax_query(req.user_prompt, req.selected_date)
+        print(f"Executing Updated DAX: \n{dax_query}")
+        
+        # 5. Render the new PDF
+        pdf_file_path = create_pdf_report_from_dict(
+            template_data=template_data, 
+            target_date=req.selected_date
+        )
+        
+        return {
+            "status": "success",
+            "message": f"Successfully patched {req.target_chart_id}.",
+            "local_pdf_path": pdf_file_path
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        reload=True,
+        reload_excludes=["generated_reports/*", "*.pdf", "*.html"]
+    )

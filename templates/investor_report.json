@@ -1,0 +1,127 @@
+{
+  "template_id": "investor_report_v1",
+  "template_name": "Investor Report - Open Terrace Analytics",
+  "metadata": {
+    "generated_date": "{{ current_date }}",
+    "filters_applied": {
+      "financial_year": "{{ target_year }}",
+      "product_type": "{{ target_product }}",
+      "customer_name": "{{ target_customer }}"
+    }
+  },
+  "theme": {
+    "primary_color": "#002050",
+    "secondary_color": "#FF9900",
+    "font_family": "Segoe UI, Arial, sans-serif"
+  },
+  "pages": [
+    {
+      "page_title": "Portfolio Profile",
+      "kpi_ribbon": [
+        { "label": "AUM", "data_key": "aum_total", "format": "currency" },
+        { "label": "Disbursement", "data_key": "disbursement_total", "format": "currency" },
+        { "label": "Collection", "data_key": "collection_total", "format": "currency" },
+        { "label": "Active Loans", "data_key": "active_loans_count", "format": "number" },
+        { "label": "Closed Loans", "data_key": "closed_loans_count", "format": "number" }
+      ],
+      "visualizations": [
+        {
+          "chart_id": "aum_trend_chart",
+          "title": "AUM Trend",
+          "chart_type": "combo_bar_line",
+          "x_axis": "financial_year",
+          "y_axis_bar": "aum_value",
+          "y_axis_line": "par_90_percent",
+          "config": {
+            "bar_color": "{{ theme.primary_color }}",
+            "line_color": "{{ theme.secondary_color }}"
+          }
+        },
+        {
+          "chart_id": "disbursement_trend_chart",
+          "title": "Disbursement Trend",
+          "chart_type": "multi_line",
+          "x_axis": "month",
+          "y_axis": "disbursement_value",
+          "group_by": "financial_year"
+        },
+        {
+          "chart_id": "disbursement_state_map",
+          "title": "Total Disbursement by State",
+          "chart_type": "choropleth_map",
+          "location_key": "state_name",
+          "value_key": "disbursement_value"
+        }
+      ]
+    },
+    {
+      "page_title": "Portfolio Quality",
+      "kpi_ribbon": [
+        { "label": "AUM", "data_key": "aum_total", "format": "currency" },
+        { "label": "Customers", "data_key": "customer_count", "format": "number" },
+        { "label": "Number of Loans", "data_key": "loan_count", "format": "number" },
+        { "label": "Overdue Amount", "data_key": "overdue_total", "format": "currency" },
+        { "label": "PAR 90 %", "data_key": "par_90_percent", "format": "percentage" }
+      ],
+      "visualizations": [
+        {
+          "chart_id": "bucket_wise_aum",
+          "title": "Bucket Wise AUM",
+          "chart_type": "horizontal_bar",
+          "y_axis": "par_bucket",
+          "x_axis": "aum_value"
+        },
+        {
+          "chart_id": "portfolio_by_product",
+          "title": "Loan Portfolio By Product Type",
+          "chart_type": "donut",
+          "category_key": "product_type",
+          "value_key": "loan_count"
+        },
+        {
+          "chart_id": "state_wise_par90",
+          "title": "State Wise PAR 90+",
+          "chart_type": "horizontal_bar",
+          "y_axis": "state_name",
+          "x_axis": "par_90_value",
+          "config": {
+            "sort": "descending",
+            "limit": 10
+          }
+        }
+      ]
+    },
+    {
+      "page_title": "Future Projections",
+      "kpi_ribbon": [
+        { "label": "AUM", "data_key": "aum_total", "format": "currency" },
+        { "label": "Future Principal", "data_key": "future_principal_total", "format": "currency" },
+        { "label": "Overdue Principal", "data_key": "overdue_principal_total", "format": "currency" }
+      ],
+      "visualizations": [
+        {
+          "chart_id": "future_principal_by_product",
+          "title": "Future Principal by Product Type",
+          "chart_type": "donut",
+          "category_key": "product_type",
+          "value_key": "future_principal_value"
+        },
+        {
+          "chart_id": "future_principal_projections",
+          "title": "Future Principal Projections",
+          "chart_type": "funnel_or_horizontal_bar",
+          "y_axis": "financial_year",
+          "x_axis": "projected_value"
+        }
+      ],
+      "tables": [
+        {
+          "table_id": "financial_year_matrix",
+          "rows": "financial_year",
+          "columns": "month",
+          "values": "projected_principal"
+        }
+      ]
+    }
+  ]
+}

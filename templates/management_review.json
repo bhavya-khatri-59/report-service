@@ -1,0 +1,132 @@
+{
+  "template_id": "management_review_v1",
+  "template_name": "Management Review Presentation",
+  "template_type": "presentation",
+  "metadata": {
+    "download_date": "{{ current_date }}",
+    "data_refresh_date": "{{ refresh_date }}",
+    "branding": "Microsoft Power BI Export"
+  },
+  "theme": {
+    "background_color": "#F3F4F6",
+    "sidebar_color": "#0F2040",
+    "font_family": "Segoe UI, sans-serif"
+  },
+  "slides": [
+    {
+      "slide_number": 1,
+      "slide_title": "Title Slide",
+      "layout": "title_page",
+      "content": {
+        "main_title": "Management Review",
+        "subtitle": "Open Terrace Analytics"
+      }
+    },
+    {
+      "slide_number": 2,
+      "slide_title": "Portfolio Profile",
+      "layout": "dashboard_grid",
+      "kpi_ribbon": [
+        { "label": "AUM", "data_key": "aum_total", "format": "currency" },
+        { "label": "Disbursement", "data_key": "disbursement_total", "format": "currency" },
+        { "label": "Collection", "data_key": "collection_total", "format": "currency" },
+        { "label": "Active Loans", "data_key": "active_loans_count", "format": "number" },
+        { "label": "Closed Loans", "data_key": "closed_loans_count", "format": "number" }
+      ],
+      "visualizations": [
+        {
+          "chart_id": "mgmt_aum_trend",
+          "title": "AUM Trend",
+          "chart_type": "combo_bar_line",
+          "x_axis": "financial_year",
+          "y_axis_bar": "aum_value",
+          "y_axis_line": "par_90_percent"
+        },
+        {
+          "chart_id": "mgmt_disbursement_trend",
+          "title": "Disbursement Trend",
+          "chart_type": "multi_line",
+          "x_axis": "month",
+          "y_axis": "disbursement_value",
+          "group_by": "financial_year"
+        },
+        {
+          "chart_id": "mgmt_disbursement_map",
+          "title": "Total Disbursement by State",
+          "chart_type": "choropleth_map",
+          "location_key": "state_name",
+          "value_key": "disbursement_value"
+        }
+      ]
+    },
+    {
+      "slide_number": 3,
+      "slide_title": "Portfolio Quality",
+      "layout": "dashboard_grid",
+      "kpi_ribbon": [
+        { "label": "AUM", "data_key": "aum_total", "format": "currency" },
+        { "label": "Customers", "data_key": "customer_count", "format": "number" },
+        { "label": "Number of Loans", "data_key": "loan_count", "format": "number" },
+        { "label": "Overdue Amount", "data_key": "overdue_total", "format": "currency" },
+        { "label": "PAR 90 %", "data_key": "par_90_percent", "format": "percentage" }
+      ],
+      "visualizations": [
+        {
+          "chart_id": "mgmt_bucket_aum",
+          "title": "Bucket Wise AUM",
+          "chart_type": "horizontal_bar",
+          "y_axis": "par_bucket",
+          "x_axis": "aum_value"
+        },
+        {
+          "chart_id": "mgmt_product_portfolio",
+          "title": "Loan Portfolio By Product Type",
+          "chart_type": "donut",
+          "category_key": "product_type",
+          "value_key": "loan_count"
+        },
+        {
+          "chart_id": "mgmt_state_par90",
+          "title": "State Wise PAR 90+",
+          "chart_type": "horizontal_bar",
+          "y_axis": "state_name",
+          "x_axis": "par_90_value"
+        }
+      ]
+    },
+    {
+      "slide_number": 4,
+      "slide_title": "Future Projections",
+      "layout": "dashboard_grid",
+      "kpi_ribbon": [
+        { "label": "AUM", "data_key": "aum_total", "format": "currency" },
+        { "label": "Future Principal", "data_key": "future_principal_total", "format": "currency" },
+        { "label": "Overdue Principal", "data_key": "overdue_principal_total", "format": "currency" }
+      ],
+      "visualizations": [
+        {
+          "chart_id": "mgmt_future_product",
+          "title": "Future Principal by ProductType",
+          "chart_type": "donut",
+          "category_key": "product_type",
+          "value_key": "future_principal_value"
+        },
+        {
+          "chart_id": "mgmt_future_projections",
+          "title": "Future Principal Projections",
+          "chart_type": "horizontal_bar",
+          "y_axis": "financial_year",
+          "x_axis": "projected_value"
+        }
+      ],
+      "tables": [
+        {
+          "table_id": "mgmt_financial_matrix",
+          "rows": "financial_year",
+          "columns": "month",
+          "values": "projected_principal"
+        }
+      ]
+    }
+  ]
+}
