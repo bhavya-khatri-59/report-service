@@ -2,3 +2,7 @@
 __pycache__
 generated_reports
 .env
+generated_reports
+pdfkit
+gpd
+static
